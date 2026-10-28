@@ -1,0 +1,68 @@
+# ===========================================================================
+# TO WRITE -- Task 4, Criterion 4.
+#
+# This file is intentionally empty. Replace these comments with your own
+# manifests. `kubectl apply -f manifests/` will refuse to run until you do,
+# which is deliberate.
+#
+# Worked example to learn the YAML shape from: manifests/03-catalog.yaml
+# ===========================================================================
+#
+# WHAT THIS FILE MUST CONTAIN
+#
+#   1. A ConfigMap named  shop-config   in namespace  shop
+#   2. A Secret    named  shop-secrets  in namespace  shop
+#
+# WHY THERE ARE TWO OBJECTS AND NOT ONE
+#
+#   Configuration and secrets are separated so that configuration can be
+#   read, reviewed, diffed and committed freely while secret material is
+#   handled under different rules. Putting a password in the ConfigMap
+#   "because it also configures the app" loses marks, and you will be asked
+#   about it in the code defense.
+#
+# THE KEYS THE APPLICATION ACTUALLY READS
+#
+#   Do not guess these. Read the three app.py files -- every value the
+#   services consume comes from os.environ.get(), and the default shown
+#   there tells you the expected format:
+#
+#     app/catalog/app.py    APP_VERSION, ENVIRONMENT
+#     app/orders/app.py     APP_VERSION, ENVIRONMENT, CATALOG_URL,
+#                           REDIS_HOST, DB_PASSWORD
+#     app/frontend/app.py   APP_VERSION, ENVIRONMENT, FEATURE_ORDERING,
+#                           CATALOG_URL, ORDER_URL
+#
+#   One of those five in the orders list is sensitive and belongs in the
+#   Secret. The other four do not. Work out which.
+#
+#   The URL values address other services. Use the cluster DNS name of the
+#   Service, never a Pod IP -- Pod IPs change on every restart. Lab 9.3
+#   covered the name resolution rules if you need a refresher.
+#
+# TWO THINGS WORTH A MARK EACH
+#
+#   - Secret data can be given as `data` (you base64-encode) or `stringData`
+#     (Kubernetes encodes for you). Pick one and be able to say why.
+#
+#   - Be ready to answer: "a Kubernetes Secret is base64-encoded, not
+#     encrypted. What protection does it actually buy you?" There is a real
+#     answer. A Distinction-level answer also names what it does *not*
+#     protect against and what you would use instead in production.
+#
+# WHAT LOSES MARKS
+#
+#   - A real password committed to version control. Use a placeholder here
+#     and set the real value out of band; say in your report how you did it.
+#   - Values hardcoded in the Deployments instead of referenced from here.
+#     The point of this file is that changing a value and restarting
+#     reconfigures the application with no image rebuild. Prove that you can.
+#
+# HOW TO CHECK
+#
+#   kubectl -n shop get configmap shop-config -o yaml
+#   kubectl -n shop get secret shop-secrets
+#   kubectl -n shop exec deploy/orders -- printenv | sort
+#   curl -s http://localhost:5000/config   # from inside an orders Pod
+#
+#   scripts/verify.sh checks all of this under "== config ==".

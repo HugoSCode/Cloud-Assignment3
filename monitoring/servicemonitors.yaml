@@ -1,0 +1,54 @@
+# ===========================================================================
+# WORKED EXAMPLE -- supplied complete. Do not change it unless you have a
+# reason you can defend; if you do change it, say so in your report.
+#
+# This file is the pattern. The equivalent files you must write yourself are
+# listed in TASKS.md. Read this one closely first: every construct you need
+# is here, and the comments explain why each is the way it is.
+# ===========================================================================
+# ---------------------------------------------------------------------------
+# ServiceMonitor is a CRD installed by kube-prometheus-stack. It tells the
+# Prometheus Operator which Services to scrape; the Operator then rewrites
+# Prometheus's configuration for you. You never edit prometheus.yml directly.
+#
+# GOTCHA: by default the Helm chart only discovers ServiceMonitors carrying
+# its own release label. Without that label, or without the chart values that
+# switch the behaviour off, this object is created successfully and then
+# silently ignored -- no error, no log line, no target.
+#
+# TWO WAYS TO SATISFY IT, and you need at least one:
+#
+#   a) label the object with the Helm release name, as the metadata below
+#      does. That is why `release: monitoring` is here, and why it has to
+#      match the release name you give kube-prometheus-stack in
+#      terraform/platform/main.tf. Change one and you must change the other.
+#
+#   b) set the chart values whose names end in SelectorNilUsesHelmValues to
+#      false, so Prometheus discovers everything in the cluster regardless
+#      of labels. There is one per object kind.
+#
+# Doing both is reasonable. Not knowing which one is making it work is not --
+# expect to be asked.
+# ---------------------------------------------------------------------------
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shop-services
+  namespace: shop
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames: ["shop"]
+  selector:
+    # Matches catalog, orders and frontend -- all three carry an "app" label
+    # and expose a port named "http".
+    matchExpressions:
+      - key: app
+        operator: In
+        values: ["catalog", "orders", "frontend"]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s

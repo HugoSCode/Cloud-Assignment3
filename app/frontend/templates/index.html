@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Microservices Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #eef2f5; margin: 0;
+           padding: 2em 1em; color: #192a3a; }
+    .wrap { max-width: 52em; margin: 0 auto; }
+    .card { background: #fff; border-radius: 8px; padding: 1.5em 2em;
+            margin-bottom: 1.5em; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+    h1 { color: #005a9c; margin-top: 0; }
+    h2 { color: #192a3a; font-size: 1.1em; border-bottom: 1px solid #dde;
+         padding-bottom: .4em; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .5em .4em; border-bottom: 1px solid #eef; }
+    th { font-size: .8em; text-transform: uppercase; color: #667; }
+    .pods { font-family: monospace; font-size: .85em; background: #f4f6f8;
+            padding: 1em; border-radius: 6px; line-height: 1.8; }
+    .pods span { color: #005a9c; font-weight: bold; }
+    .down { color: #b26a00; font-weight: bold; }
+    .ok-msg { background: #eaf7ee; border-left: 4px solid #2e7d32; padding: .8em 1em;
+              border-radius: 4px; margin-bottom: 1em; }
+    .err-msg { background: #fdf0e6; border-left: 4px solid #b26a00; padding: .8em 1em;
+               border-radius: 4px; margin-bottom: 1em; }
+    button { background: #005a9c; color: #fff; border: 0; padding: .55em 1.2em;
+             border-radius: 4px; font-size: 1em; cursor: pointer; }
+    select, input { padding: .5em; border: 1px solid #ccd; border-radius: 4px;
+                    font-size: 1em; }
+    form { display: flex; gap: .6em; flex-wrap: wrap; align-items: center; }
+    .meta { margin: 0 0 1em; display: flex; gap: .5em; flex-wrap: wrap; }
+    .badge { font-size: .75em; font-weight: bold; letter-spacing: .04em;
+             text-transform: uppercase; padding: .3em .7em; border-radius: 99px;
+             background: #e8ecf0; color: #44525f; }
+    .badge.secure { background: #2e7d32; color: #fff; }
+    .badge.insecure { background: #b26a00; color: #fff; }
+    .badge.env, .badge.ver { background: #dde6ee; color: #1f3864; }
+    .badge.on { background: #dde6ee; color: #1f3864; }
+    .badge.off { background: #fdf0e6; color: #b26a00; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card">
+    <h1>Microservices Demo</h1>
+
+    {% if message %}<div class="ok-msg">{{ message }}</div>{% endif %}
+    {% if error %}<div class="err-msg">{{ error }}</div>{% endif %}
+
+    <p>Every section below is served by a different Pod. Refresh the page and
+       watch the names change as the Services load-balance across replicas.</p>
+
+    <div class="meta">
+      <span class="badge {{ 'secure' if secure else 'insecure' }}">
+        {{ 'HTTPS' if secure else 'HTTP' }}
+      </span>
+      <span class="badge env">{{ environment }}</span>
+      <span class="badge ver">v{{ app_version }}</span>
+      <span class="badge {{ 'on' if feature_ordering else 'off' }}">
+        ordering {{ 'on' if feature_ordering else 'off' }}
+      </span>
+    </div>
+
+    <div class="pods">
+      frontend pod &nbsp;&rarr; <span>{{ frontend_pod }}</span><br>
+      catalog pod &nbsp;&nbsp;&rarr;
+        {% if catalog_up %}<span>{{ catalog_pod }}</span>
+        {% else %}<span class="down">unreachable</span>{% endif %}<br>
+      order pod &nbsp;&nbsp;&nbsp;&nbsp;&rarr;
+        {% if orders_up %}<span>{{ order_pod }}</span>
+        {% else %}<span class="down">unreachable</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Catalog</h2>
+    {% if catalog_up %}
+      <table>
+        <tr><th>ID</th><th>Product</th><th>Price</th></tr>
+        {% for product in products %}
+          <tr>
+            <td>{{ product.id }}</td>
+            <td>{{ product.name }}</td>
+            <td>&pound;{{ "%.2f"|format(product.price) }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p class="down">The catalog service is not responding. Ordering is
+         disabled, but the rest of this page still works &mdash; that is
+         partial failure, not total failure.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Place an order</h2>
+    {% if catalog_up and feature_ordering %}
+      <form method="post" action="/order">
+        <select name="product_id">
+          {% for product in products %}
+            <option value="{{ product.id }}">{{ product.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="number" name="quantity" value="1" min="1" max="99" size="3">
+        <button type="submit">Order</button>
+      </form>
+    {% elif not feature_ordering %}
+      <p class="down">Ordering is switched off by the <code>FEATURE_ORDERING</code>
+         toggle in the ConfigMap. Change it and restart the frontend to re-enable.</p>
+    {% else %}
+      <p class="down">Unavailable while the catalog service is down.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Orders placed</h2>
+    {% if not orders_up %}
+      <p class="down">The order service is not responding.</p>
+    {% elif not store_up %}
+      <p class="down">The order service is healthy, but its datastore is
+         unreachable, so it cannot list past orders. Note that this is a
+         different failure from the one above &mdash; the service is answering,
+         its dependency is not.</p>
+    {% elif orders %}
+      <table>
+        <tr><th>#</th><th>Product</th><th>Qty</th><th>Total</th><th>Placed by pod</th></tr>
+        {% for order in orders %}
+          <tr>
+            <td>{{ order.id }}</td>
+            <td>{{ order.product }}</td>
+            <td>{{ order.quantity }}</td>
+            <td>&pound;{{ "%.2f"|format(order.total) }}</td>
+            <td style="font-family: monospace; font-size: .85em;">{{ order.placed_by }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p>No orders yet. Place one above.</p>
+    {% endif %}
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,142 @@
+# ===========================================================================
+# TO WRITE -- Task 6, Criterion 6.
+#
+# Worked example for the object shape: monitoring/servicemonitors.yaml.
+# It is a different kind, but it is discovered by the same operator in the
+# same way, so the metadata is the part to copy.
+# ===========================================================================
+#
+# WHAT THIS FILE MUST CONTAIN
+#
+#   One PrometheusRule named  shop-alerts  in namespace  shop, holding at
+#   least FIVE alerting rules, spanning availability, performance and
+#   application behaviour. scripts/verify.sh checks for that name.
+#
+#   Group them. A PrometheusRule holds named groups, and grouping by what
+#   the alert is about -- availability, performance, business behaviour --
+#   makes the file readable and shows you thought about categories rather
+#   than listing whatever metrics you happened to find.
+#
+# WHAT YOUR ALERTS MUST COVER
+#
+#   At least five rules, and the brief requires them to span three
+#   categories. You choose the expressions and the thresholds.
+#
+#   AVAILABILITY -- at least one of:
+#     - a service has stopped being scrapeable at all;
+#     - a Pod has been not-Ready for long enough to matter;
+#     - a container is restarting repeatedly.
+#
+#   PERFORMANCE -- at least one of:
+#     - a service is returning server errors at an abnormal rate;
+#     - a service's tail latency has degraded;
+#     - a container is saturating its CPU or memory limit.
+#
+#   APPLICATION BEHAVIOUR -- at least one:
+#     - a business-level condition, using a hand-written counter rather than
+#       an HTTP metric. Task 6 also requires you to ADD a business metric of
+#       your own to the application code; alerting on the one you added is
+#       the natural way to show it works.
+#
+#   Five rules covering all three categories is the floor. Covering each
+#   category properly usually lands at six or seven, which is fine.
+#
+# WHERE TO GET THE EXPRESSIONS
+#
+#   docs/CRITICAL-EVALUATION-TEMPLATE.md has worked PromQL for the request
+#   rate, the error ratio, the latency percentile and per-Pod CPU. Use it.
+#   Those are standard forms and reinventing them teaches you nothing.
+#
+#   Copying an expression is not the assessed part of this task. Choosing
+#   the thresholds, the durations and the groupings -- and defending them --
+#   is. Four principles are behind those forms, and you will be asked to
+#   explain each one:
+#
+#   RATES, NOT COUNTS.  flask_http_request_total only ever increases, and
+#   it resets to zero when a Pod restarts. An alert on the raw value fires
+#   once, permanently, and never usefully again. rate() gives you a
+#   per-second rate and handles the reset. Know why increase() is the right
+#   choice instead for a restart-count rule.
+#
+#   RATIOS, NOT ABSOLUTE ERROR RATES.  "More than 10 errors per second" is
+#   a different condition at 20 requests per second than at 20,000. Express
+#   error conditions as a proportion of total traffic, and watch the
+#   denominator: the same selector as the numerator, minus the status
+#   filter, or the ratio is meaningless.
+#
+#   PERCENTILES, NOT AVERAGES.  A mean latency hides exactly the users you
+#   care about. Note the `sum by (le)` inside the histogram_quantile call in
+#   the template -- the bucket boundary label has to survive the aggregation
+#   or the result is silently nonsense rather than an error. If you adapt
+#   the expression to group by service as well, that label must survive too.
+#
+#   `for:` ON EVERY RULE.  This one the template cannot give you, because it
+#   is a judgement, not an expression. An alert with no `for` duration fires
+#   on a single scrape blip, and an alerting system that cries wolf is worse
+#   than none at all. A crash loop and a slow latency regression do not
+#   deserve the same patience. Pick each number deliberately and justify it.
+#
+#   THE THRESHOLDS ARE ALSO YOURS.  5% errors? 1 second at p95? Those are
+#   defaults, not truths. Say what you chose and what it would cost to be
+#   wrong in each direction -- an alert nobody acts on, or an outage nobody
+#   was told about.
+#
+# A LABEL TRAP THAT HAS CAUGHT EVERY COHORT SO FAR
+#
+#   The metric flask_http_request_total does NOT carry an `endpoint` label,
+#   even though the exporter is configured with group_by="endpoint". The
+#   grouping label is attached to the duration histogram, not the counter.
+#
+#   Aggregate the counter by a label it does not have and PromQL does not
+#   error -- it returns a single series with that label empty. Your
+#   expression looks fine, your alert looks fine, and it is measuring
+#   something other than what you think.
+#
+#   Check what labels a metric actually has before you group by them:
+#     curl -s localhost:9090/api/v1/series --data-urlencode \
+#       'match[]=flask_http_request_total'
+#
+# SEVERITY AND ANNOTATIONS
+#
+#   Give every rule a severity label and a summary annotation that a person
+#   woken at 3am could act on. Use the Go template variables -- {{ $labels.pod }}
+#   and friends -- so the message names the thing that broke. "High error
+#   rate" is not an actionable alert.
+#
+# HOW TO CHECK
+#
+#   Validate the syntax before you apply it, on your own machine:
+#     promtool check rules monitoring/alerts.yaml
+#
+#   Then:
+#     kubectl apply -f monitoring/alerts.yaml
+#     kubectl -n shop get prometheusrule shop-alerts
+#
+#   In the Prometheus UI, Status -> Rules: every group must appear, with no
+#   rule in an error state. If your rules are absent entirely, the operator
+#   has not discovered them -- check the labels on the object, and read the
+#   note in monitoring/servicemonitors.yaml about the selector default.
+#
+#   Finally, make one fire on purpose, and capture Inactive -> Pending ->
+#   Firing. The Pending screenshot is what proves your `for` duration exists
+#   and is doing something; without it a marker cannot tell whether you set
+#   one at all.
+#
+#   Be careful which load you use. `generate-load.sh ... errors` asks for a
+#   product that does not exist, which is a 4xx -- a CLIENT error. If your
+#   error-rate alert filters on 5xx, as it should, that load will correctly
+#   fail to fire it, and you will waste an afternoon concluding your rule is
+#   broken when it is right.
+#
+#   To produce real server errors, break a dependency:
+#
+#     kubectl -n shop scale deploy/catalog --replicas=0
+#     ./scripts/generate-load.sh <host> 600 order 8
+#
+#   The order service now returns 503 because it cannot reach the catalog.
+#   Notice where that 5xx shows up -- on the orders job, not at the ingress,
+#   because the frontend still renders a page. That observation belongs in
+#   Task 8, and it is the argument for instrumenting every service rather
+#   than only the edge.
+#
+#   Remember to scale catalog back up afterwards.

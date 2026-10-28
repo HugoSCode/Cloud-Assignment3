@@ -1,0 +1,76 @@
+# ===========================================================================
+# TO WRITE -- Task 4, Criterion 4.
+#
+# Worked example to learn the YAML shape from: manifests/03-catalog.yaml
+# (that one has no storage, so the volume parts are yours to work out.)
+# ===========================================================================
+#
+# WHAT THIS FILE MUST CONTAIN
+#
+#   1. A PersistentVolumeClaim named  redis-data  in namespace  shop
+#   2. A Deployment               named  redis       in namespace  shop
+#   3. A Service                  named  redis       in namespace  shop
+#
+#   scripts/verify.sh expects exactly those names.
+#
+# WHY REDIS NEEDS A VOLUME AND THE OTHER THREE SERVICES DO NOT
+#
+#   catalog, orders and frontend hold no state: kill a Pod and nothing is
+#   lost. Redis holds the orders. Without a PersistentVolumeClaim the data
+#   lives in the container's writable layer and is destroyed with the Pod --
+#   and Task 8 asks you to delete this Pod on purpose and report what
+#   survived. If you skip the PVC, the honest answer is "nothing", and you
+#   will have failed the experiment rather than run it.
+#
+# THE PERSISTENTVOLUMECLAIM
+#
+#   accessModes   ReadWriteOnce is correct here, and the reason matters.
+#   resources     A couple of GiB is ample; justify whatever you pick.
+#   storageClassName
+#                 Leave it unset to use the cluster default. The bootstrap
+#                 in terraform/shared/cloud-init.yaml points MicroK8s
+#                 hostpath-storage at the dedicated data disk mounted at
+#                 /datadisk, so the default class already lands in the right
+#                 place. Confirm that it did -- see HOW TO CHECK below.
+#
+# THE DEPLOYMENT -- ONE DECISION THAT WILL BITE YOU
+#
+#   The default update strategy is RollingUpdate: Kubernetes starts the new
+#   Pod before terminating the old one. Think about what that does when the
+#   two Pods both want a ReadWriteOnce volume that only one node-attachment
+#   can hold at a time.
+#
+#   If you get this wrong the symptom is not an error message. The rollout
+#   simply never finishes and the new Pod sits in ContainerCreating forever.
+#   Set the strategy deliberately and be able to explain your choice.
+#
+#   Other things this Deployment needs:
+#     - image            redis:7-alpine is fine; a public image is acceptable
+#                        for a datastore you did not write
+#     - args             turn on append-only persistence, or the PVC holds a
+#                        file Redis never writes to
+#     - containerPort    6379, and give it a name
+#     - volumeMounts     Redis writes to /data
+#     - volumes          referencing the PVC by claimName
+#     - resources        requests and limits, as in 03-catalog.yaml
+#     - readinessProbe   `redis-cli ping` via an exec probe. An httpGet probe
+#                        will not work here -- Redis does not speak HTTP.
+#
+# THE SERVICE
+#
+#   ClusterIP. Redis must not be reachable from outside the cluster; the
+#   only route in from the internet is the Ingress in 07-ingress.yaml.
+#   Exposing Redis with NodePort or LoadBalancer is a security finding and
+#   will cost you marks in Criterion 4 and again in Criterion 5.
+#
+# HOW TO CHECK
+#
+#   kubectl -n shop get pvc redis-data          # must reach Bound
+#   kubectl -n shop describe pvc redis-data
+#   ls /datadisk/microk8s-storage/              # the volume really is here
+#   kubectl -n shop exec deploy/redis -- redis-cli ping
+#
+#   Then prove persistence, which is the evidence Task 8 wants:
+#     place an order through the web page
+#     kubectl -n shop delete pod -l app=redis
+#     wait for the new Pod, reload the page -- the order is still listed

@@ -1,0 +1,93 @@
+# ===========================================================================
+# TO WRITE -- Task 5, Criterion 5. The hardest file in the repository.
+#
+# The labs did not cover cert-manager, so read these first, in this order:
+#
+#   1. docs/INGRESS-AND-TLS-PRIMER.md, Part 2 -- the object model, from
+#      first principles: issuers, Certificates, and the Secret that results.
+#   2. docs/TROUBLESHOOTING.md -- the two failures that account for most of
+#      the time people lose here. Read it BEFORE you start, not after.
+#   3. cert-manager's own documentation, which is good:
+#        https://cert-manager.io/docs/configuration/selfsigned/
+#        https://cert-manager.io/docs/configuration/ca/
+#
+# Budget an afternoon.
+# ===========================================================================
+#
+# WHAT YOU ARE BUILDING
+#
+#   A certificate authority that lives inside your own cluster, and a chain
+#   of trust that runs from it down to the certificate served on port 443.
+#
+#   You need three objects in this file, and the leaf certificate they
+#   ultimately sign goes in 07-ingress.yaml. Work out what the three are
+#   from this constraint:
+#
+#     - cert-manager can sign a certificate with a self-signed issuer, but
+#       a self-signed issuer signs each certificate independently. Every
+#       certificate is then its own root, which is not a chain at all.
+#
+#     - cert-manager can also sign with a CA issuer, which uses a private
+#       key held in a Kubernetes Secret. That gives you a real chain --
+#       but something has to create that CA key and certificate first,
+#       and it cannot sign itself into existence.
+#
+#   Resolve that and the three objects fall out. This is the standard
+#   cert-manager bootstrap pattern; it has a name and you should find it.
+#
+# THE TRAP THAT COSTS PEOPLE THE MOST TIME
+#
+#   A ClusterIssuer is cluster-scoped, but the Secret holding its signing
+#   key is not -- it lives in one specific namespace, and a ClusterIssuer
+#   only looks in one place for it. That place is not your application's
+#   namespace, and it is not configurable without a cert-manager flag.
+#
+#   Put the CA Certificate in the wrong namespace and everything applies
+#   cleanly, no error appears, and the leaf certificate simply never becomes
+#   Ready. The only clue is in the cert-manager controller logs.
+#
+#   Find out what the "cluster resource namespace" is and where it defaults.
+#
+# DECISIONS YOU MUST MAKE AND DEFEND
+#
+#   duration / renewBefore   A CA and a leaf should not have the same
+#                            lifetime. Public CAs settled on roughly 90 days
+#                            for leaves; have a view on why, and on what
+#                            renewBefore has to be relative to it.
+#
+#   privateKey algorithm     RSA or ECDSA, and a size. Either is acceptable.
+#                            Pick one and know the trade-off -- Criterion 5
+#                            at Merit asks you to justify it, and at
+#                            Distinction asks what it costs you.
+#
+#   isCA                     One of your three objects needs it. Be able to
+#                            say what it actually sets in the certificate
+#                            and why a leaf must not have it.
+#
+#   commonName / subject     These appear in the browser warning dialog and
+#                            in your evidence screenshots. Make them say
+#                            something meaningful about who issued this.
+#
+# WHY NOT LET'S ENCRYPT
+#
+#   You may be wondering why a self-built CA rather than a publicly trusted
+#   certificate. Task 5 in the brief sets out the reasoning in full, and the
+#   code defense will ask you to repeat it. The short version is that the
+#   free hostnames all three clouds give you share a single rate limit with
+#   every other user of that suffix, and that limit is exhausted often
+#   enough that a whole cohort could fail on the due date through no fault
+#   of its own. Public issuance is available as an unassessed extension.
+#
+#   You will still get a browser warning. That warning is the correct
+#   outcome, not a defect, and explaining it precisely is worth marks.
+#   "The certificate is invalid" is wrong and will cost you.
+#
+# HOW TO CHECK
+#
+#   kubectl get clusterissuer
+#   kubectl -n <wherever-you-put-it> describe certificate <your-ca>
+#   kubectl -n cert-manager logs -l app.kubernetes.io/name=cert-manager --tail=50
+#
+#   The CA Certificate must reach Ready=True before the leaf in
+#   07-ingress.yaml can. Check them in that order; a failure in the leaf is
+#   almost always a failure in the CA that you have not looked at yet.

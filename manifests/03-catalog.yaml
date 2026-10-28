@@ -1,0 +1,75 @@
+# ===========================================================================
+# WORKED EXAMPLE -- supplied complete. Do not change it unless you have a
+# reason you can defend; if you do change it, say so in your report.
+#
+# This file is the pattern. The equivalent files you must write yourself are
+# listed in TASKS.md. Read this one closely first: every construct you need
+# is here, and the comments explain why each is the way it is.
+# ===========================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: shop
+  labels:
+    app: catalog
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: catalog
+          image: localhost:32000/catalog-service:v1
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: APP_VERSION
+              valueFrom:
+                configMapKeyRef: { name: shop-config, key: APP_VERSION }
+            - name: ENVIRONMENT
+              valueFrom:
+                configMapKeyRef: { name: shop-config, key: ENVIRONMENT }
+
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog
+  namespace: shop
+  labels:
+    app: catalog
+spec:
+  type: ClusterIP
+  selector:
+    app: catalog
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5000
+      targetPort: http

@@ -1,0 +1,113 @@
+# ===========================================================================
+# TO WRITE -- Task 5, Criterion 5.
+#
+# Write this one after 06-tls.yaml. It depends on the issuer you build there.
+#
+# The labs did not cover the Ingress resource. Before you write this file:
+#
+#   1. Read docs/INGRESS-AND-TLS-PRIMER.md, Part 1 -- why a Service cannot
+#      publish a named HTTPS site, and what an Ingress adds.
+#   2. Apply docs/examples/EXAMPLE-ingress.yaml, watch it route a real
+#      request, break it in the four ways that file suggests, then DELETE it.
+#      It is plain HTTP with no host match, so it shows you the shape of the
+#      object and nothing of the work assessed here.
+#
+# What the example does not give you, and this file needs: the host match,
+# the TLS block, the HTTP redirect, and the Certificate above.
+# ===========================================================================
+#
+# WHAT THIS FILE MUST CONTAIN
+#
+#   1. A Certificate named  shop-tls  in namespace  shop -- the leaf, for
+#      your own hostname, signed by the CA issuer from 06-tls.yaml
+#   2. An Ingress named  shop  in namespace  shop
+#
+#   scripts/verify.sh expects those two names, and expects the Certificate's
+#   secretName to be shop-tls as well. The names in 06-tls.yaml are yours to
+#   choose; these two are not.
+#
+# THE HOSTNAME PLACEHOLDER -- READ THIS BEFORE YOU WRITE ANYTHING
+#
+#   scripts/render.sh substitutes your real hostname into this file. It
+#   looks for the literal string:
+#
+#       __SHOP_HOST__
+#
+#   Use that placeholder everywhere the hostname appears, and let the script
+#   fill it in. If you hardcode your hostname instead, the file stops being
+#   reproducible: nobody else can run your repository, and a marker cloning
+#   it gets a certificate for a machine that no longer exists.
+#
+#   Your hostname comes out of stage 1:
+#       terraform -chdir=terraform/infra-<cloud> output -raw shop_host
+#
+#   The hostname appears in three places across the two objects below.
+#   Missing one is the single most common cause of a certificate that is
+#   issued correctly and then rejected by the browser anyway.
+#
+# THE CERTIFICATE
+#
+#   secretName   cert-manager writes a kubernetes.io/tls Secret at this
+#                name. The Ingress must reference the same name, and both
+#                must be in the same namespace as the Ingress.
+#   dnsNames     Modern browsers ignore commonName entirely and validate
+#                against the Subject Alternative Name extension. Setting
+#                only commonName produces a certificate that openssl shows
+#                as correct and Chrome refuses. Set both.
+#   issuerRef    Points at the CA ClusterIssuer from 06-tls.yaml. Note that
+#                `kind` matters here: Issuer and ClusterIssuer are different
+#                resources and the default is not the one you want.
+#
+# THE INGRESS
+#
+#   ingressClassName   The platform Terraform installs ingress-nginx and
+#                      makes it the default class. Name it explicitly
+#                      anyway; relying on a default that a future chart
+#                      upgrade could change is not reproducible.
+#
+#   tls                Binds the hostname to the Secret above. Without this
+#                      block nginx serves its own self-signed fallback
+#                      certificate and your chain is never used -- the site
+#                      "works over HTTPS" and none of your Task 5 work is
+#                      doing anything. Check the issuer, not just the lock.
+#
+#   rules              One host, one path, routed to the frontend Service by
+#                      name and port. Not to a Pod, and not to orders or
+#                      catalog -- those two have no business being reachable
+#                      from outside the cluster.
+#
+#   annotations        Task 5 requires that plain HTTP does not serve the
+#                      application. Redirecting is the expected behaviour,
+#                      and ingress-nginx has annotations for it. Find them.
+#
+#                      Then think about what port 80 is still for, given
+#                      that your firewall in Task 1 opens it. If you
+#                      concluded it should be closed instead, that is a
+#                      defensible position -- argue it in your report rather
+#                      than leaving the rule in place unexamined.
+#
+# HOW TO CHECK
+#
+#   ./scripts/render.sh <your-hostname>
+#   kubectl apply -f manifests/07-ingress.yaml
+#   kubectl -n shop get certificate shop-tls -w      # Ready=True
+#
+#   curl -sk -o /dev/null -w '%{http_code}\n'            https://<host>/
+#   curl -s  -o /dev/null -w '%{http_code} %{redirect_url}\n' http://<host>/
+#
+#   Expect 200, then a 3xx pointing at the https:// URL.
+#
+#   Now prove the chain rather than clicking through the browser warning:
+#
+#     echo | openssl s_client -connect <host>:443 -servername <host> \
+#       2>/dev/null | openssl x509 -noout -subject -issuer -dates \
+#       -ext subjectAltName
+#
+#   Subject and issuer must DIFFER. If they are the same you have built one
+#   self-signed certificate, not a chain, and Criterion 5 caps at a bare
+#   pass however well the site works.
+#
+#   Then export your CA certificate from its Secret and validate against it
+#   with `curl --cacert`. A 200 without -k is the evidence that your chain
+#   is sound and the browser warning is only about trust anchors. That
+#   command belongs in your report.

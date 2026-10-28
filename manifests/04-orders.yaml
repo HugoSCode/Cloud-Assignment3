@@ -1,0 +1,68 @@
+# ===========================================================================
+# TO WRITE -- Task 4, Criterion 4.
+#
+# Worked example: manifests/03-catalog.yaml. This file is the closest of the
+# four to that one, so it is the easiest place to start.
+# ===========================================================================
+#
+# WHAT THIS FILE MUST CONTAIN
+#
+#   1. A Deployment named  orders  in namespace  shop
+#   2. A Service    named  orders  in namespace  shop  (ClusterIP)
+#
+# WHERE IT DIFFERS FROM THE CATALOG EXAMPLE
+#
+#   The shape is the same. Three things change:
+#
+#   a) The image name. See scripts/build-images.sh for what each image is
+#      tagged as and which registry it is pushed to.
+#
+#   b) The environment. catalog needs two values; orders needs five,
+#      because it talks to the catalog service and to Redis, and it holds a
+#      credential. Read app/orders/app.py and list every os.environ.get()
+#      call -- that list is your answer, and nothing more should be here.
+#
+#   c) One of those five comes from the Secret, not the ConfigMap. The YAML
+#      for that is NOT in the catalog example, because catalog has no
+#      secrets. Look up the difference between configMapKeyRef and
+#      secretKeyRef; they are siblings and read almost identically.
+#
+# THE LABEL THAT MAKES MONITORING WORK
+#
+#   monitoring/servicemonitors.yaml selects Services by an `app` label whose
+#   value is one of catalog, orders, frontend, and scrapes a port called
+#   `http`. If your Service's label or port name does not match, Prometheus
+#   will not scrape this service -- and it will not tell you so. Nothing is
+#   logged. You will simply find the application layer missing from your
+#   dashboard in Task 7 and have to work backwards.
+#
+#   Read the ServiceMonitor before you write the Service, not after.
+#
+# THE PROBES
+#
+#   Copy the pattern from 03-catalog.yaml, and then notice what it does
+#   *not* do: /healthz in app/orders/app.py deliberately does not check
+#   Redis or the catalog service.
+#
+#   Make sure you understand why before the code defense. Here is the
+#   question you will be asked: "orders depends on Redis. Why does its
+#   readiness probe not check that Redis is up?" Work out what Kubernetes
+#   does to a Service's endpoint list when a readiness probe fails, then
+#   work out what happens to every replica at once when their shared
+#   dependency goes down. Task 8, experiment B, is where you observe the
+#   behaviour this choice produces.
+#
+# SECURITY CONTEXT
+#
+#   Keep the pod- and container-level securityContext from the example.
+#   Criterion 4 credits it, and Criterion 9 asks you to justify it. The
+#   Dockerfile you write for this service must create a user with the same
+#   UID the manifest asks to run as, or the Pod will not start.
+#
+# HOW TO CHECK
+#
+#   kubectl -n shop rollout status deploy/orders
+#   kubectl -n shop get endpoints orders        # must be non-empty
+#   kubectl -n shop exec deploy/orders -- printenv | sort
+#   kubectl -n shop exec deploy/orders -- curl -s localhost:5000/config
+#   kubectl -n shop exec deploy/orders -- curl -s localhost:5000/metrics | head

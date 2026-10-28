@@ -1,0 +1,138 @@
+#cloud-config
+# ===========================================================================
+# SHARED bootstrap -- identical on AWS, Azure and Catalyst Cloud.
+#
+# This file is the proof that the platform layer is cloud-neutral. The only
+# thing that differs between providers is how the VM and its disk come into
+# existence; once Linux is booted, the same script turns any of them into the
+# same cluster.
+#
+# Rendered by Terraform's templatefile() with two variables:
+#   admin_user    the login account the provider creates
+#                 (ubuntu on AWS and Catalyst, azureuser on Azure)
+#   disk_hint     a provider-specific device path to try FIRST; may be empty
+#
+# Every dollar-brace sequence in this file is a Terraform interpolation, so
+# the shell below writes $VAR and never a braced form -- a braced shell
+# variable here would fail the apply with an unknown variable error.
+# ===========================================================================
+
+package_update: true
+
+write_files:
+  - path: /usr/local/sbin/bootstrap-k8s.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euxo pipefail
+
+      ADMIN_USER="${admin_user}"
+      DISK_HINT="${disk_hint}"
+
+      # ------------------------------------------------------------------
+      # Find the dedicated data disk, on any cloud.
+      #
+      # Each provider presents an attached volume differently:
+      #
+      #   Azure     /dev/disk/azure/scsi1/lun0   (stable udev symlink)
+      #   AWS       /dev/nvme1n1 on Nitro, /dev/xvdf on older instance types
+      #   Catalyst  /dev/vdb                     (virtio)
+      #
+      # Rather than hardcode one, try the provider's hint first and then a
+      # candidate list, accepting only a device that is a real block device,
+      # is NOT the root disk, and has nothing mounted from it.
+      #
+      # NOTE ON /mnt: Azure attaches an extra *temporary* disk and Ubuntu
+      # mounts it at /mnt. Its contents are destroyed when the VM is
+      # deallocated. We never use /mnt on any cloud -- the data disk goes to
+      # /datadisk everywhere, so the layout is identical regardless of
+      # provider.
+      # ------------------------------------------------------------------
+      ROOT_DISK=$(lsblk -ndo PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null || true)
+      [ -z "$ROOT_DISK" ] && ROOT_DISK=$(lsblk -ndo NAME --nodeps | head -1)
+
+      find_data_disk () {
+        local candidate
+        for candidate in "$DISK_HINT" \
+                         /dev/disk/azure/scsi1/lun0 \
+                         /dev/vdb /dev/nvme1n1 /dev/xvdf /dev/sdc; do
+          [ -z "$candidate" ] && continue
+          [ -e "$candidate" ] || continue
+
+          local real
+          real=$(readlink -f "$candidate")
+          local base
+          base=$(basename "$real")
+
+          # skip the root disk
+          [ "$base" = "$ROOT_DISK" ] && continue
+          # skip anything already mounted (this excludes Azure's /mnt temp disk)
+          lsblk -no MOUNTPOINT "$real" 2>/dev/null | grep -q . && continue
+
+          echo "$real"
+          return 0
+        done
+        return 1
+      }
+
+      # The attachment can lag the first boot; wait a little for it.
+      DEVICE=""
+      for _ in $(seq 1 30); do
+        if DEVICE=$(find_data_disk); then break; fi
+        sleep 2
+      done
+
+      if [ -n "$DEVICE" ]; then
+        echo "Using data disk: $DEVICE"
+        blkid "$DEVICE" || mkfs.ext4 -L k8sdata "$DEVICE"
+        mkdir -p /datadisk
+        grep -q '/datadisk' /etc/fstab || \
+          echo "LABEL=k8sdata /datadisk ext4 defaults,nofail 0 2" >> /etc/fstab
+        mount -a
+      else
+        echo "WARNING: no separate data disk found; continuing on the root disk."
+      fi
+
+      # ------------------------------------------------------------------
+      # Container tooling
+      # ------------------------------------------------------------------
+      snap install docker
+      addgroup --system docker || true
+      adduser "$ADMIN_USER" docker || true
+
+      # ------------------------------------------------------------------
+      # MicroK8s -- identical on every provider
+      # ------------------------------------------------------------------
+      snap install microk8s --classic
+      usermod -a -G microk8s "$ADMIN_USER"
+      mkdir -p "/home/$ADMIN_USER/.kube"
+      chown -f -R "$ADMIN_USER" "/home/$ADMIN_USER/.kube"
+
+      microk8s status --wait-ready --timeout 300
+
+      # Point the storage class at the dedicated disk BEFORE enabling it, so
+      # PersistentVolumes land there rather than on the root disk.
+      if mountpoint -q /datadisk; then
+        mkdir -p /datadisk/microk8s-storage
+        microk8s enable hostpath-storage:default-storage-path=/datadisk/microk8s-storage
+      else
+        microk8s enable hostpath-storage
+      fi
+
+      microk8s enable dns
+      microk8s enable registry
+      microk8s enable helm3
+
+      snap alias microk8s.kubectl kubectl || true
+      snap alias microk8s.helm3 helm || true
+
+      # Stage 2 Terraform runs on this VM and talks to 127.0.0.1, so the
+      # Kubernetes API never has to be exposed to the internet on any cloud.
+      microk8s config > "/home/$ADMIN_USER/.kube/config"
+      chown "$ADMIN_USER":"$ADMIN_USER" "/home/$ADMIN_USER/.kube/config"
+      chmod 600 "/home/$ADMIN_USER/.kube/config"
+
+      touch /var/lib/cloud/bootstrap-complete
+
+runcmd:
+  - /usr/local/sbin/bootstrap-k8s.sh

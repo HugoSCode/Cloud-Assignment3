@@ -1,0 +1,20 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+
+# Keys -- never commit these
+k8s-key
+k8s-key.pub
+*.pem
+ca.crt
+
+# Build and capture output
+build/
+evidence/
+__pycache__/
+*.pyc
+dump.rdb

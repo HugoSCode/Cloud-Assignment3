@@ -1,0 +1,61 @@
+# ===========================================================================
+# TO WRITE -- Task 4, Criterion 4.
+#
+# Worked example: manifests/03-catalog.yaml
+# ===========================================================================
+#
+# WHAT THIS FILE MUST CONTAIN
+#
+#   1. A Deployment named  frontend  in namespace  shop
+#   2. A Service    named  frontend  in namespace  shop
+#
+# THE SERVICE TYPE QUESTION
+#
+#   This is the only service a user ever sees, so the instinct is to expose
+#   it with NodePort or LoadBalancer. Do not.
+#
+#   The Ingress in 07-ingress.yaml routes to this Service by name, from
+#   inside the cluster. If you also expose it directly you have opened a
+#   second route into the application that bypasses TLS termination
+#   entirely -- an unencrypted path to the same pages, on a port your
+#   firewall rules in Task 1 never accounted for.
+#
+#   ClusterIP. All four Services in this deployment are ClusterIP, and
+#   exactly one object reaches the internet. Be able to say which and why.
+#
+# THE ENVIRONMENT
+#
+#   Five values, all from the ConfigMap, none from the Secret -- the
+#   frontend holds no credentials because it owns no data. Read
+#   app/frontend/app.py for the exact names.
+#
+#   FEATURE_ORDERING is worth noticing: it is a feature flag. Flip it to
+#   "off" in the ConfigMap, restart the Deployment, and the ordering form
+#   disappears without rebuilding or redeploying an image. That is a good
+#   thing to demonstrate in your report -- it shows the ConfigMap is doing
+#   real work rather than just existing to satisfy a requirement.
+#
+# REPLICAS
+#
+#   Run more than one. Task 8, experiment C, asks you to show requests being
+#   distributed across replicas, and the page footer reports which Pod
+#   served it, so the evidence is easy to capture: reload a few times and
+#   the name changes.
+#
+#   Then be ready for the follow-up: "you have two replicas of a single-node
+#   cluster. What availability does that actually buy you?" There is an
+#   honest answer, and it is not "high availability".
+#
+# THE SAME LABEL AND PORT-NAME RULE AS ORDERS
+#
+#   The ServiceMonitor matches on the `app` label and a port named `http`.
+#   Get either wrong and this service is silently absent from your metrics.
+#
+# HOW TO CHECK
+#
+#   kubectl -n shop rollout status deploy/frontend
+#   kubectl -n shop get endpoints frontend       # must list 2 addresses
+#   kubectl -n shop port-forward deploy/frontend 8080:5000
+#   curl -s localhost:8080/ | head -40
+#
+#   Reload several times and watch the "served by" value change.

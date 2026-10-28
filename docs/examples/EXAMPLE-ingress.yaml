@@ -1,0 +1,123 @@
+# ===========================================================================
+# WORKED EXAMPLE -- a plain-HTTP Ingress. Teaching aid only.
+#
+# This is NOT part of your deployment and NOT the file you submit. It lives
+# in docs/examples/ precisely so that `kubectl apply -f manifests/` never
+# picks it up.
+#
+# Read docs/INGRESS-AND-TLS-PRIMER.md first, then use this to watch an
+# Ingress actually route a request before you write your own.
+#
+#   APPLY IT          kubectl apply -f docs/examples/EXAMPLE-ingress.yaml
+#   WATCH IT WORK     see the commands at the bottom
+#   THEN DELETE IT    kubectl delete -f docs/examples/EXAMPLE-ingress.yaml
+#
+# Delete it before you capture your final evidence. It publishes the catalog
+# service to the internet over unencrypted HTTP, which is exactly what your
+# architecture is supposed to prevent -- there should be one way in, and it
+# should be TLS. Leaving it in place is an assessable fault in Task 5.
+#
+# That is also the point of the exercise: it is a working Ingress and a
+# security mistake at the same time. Being able to say why is worth more
+# than the YAML.
+# ===========================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: example-catalog-http
+  namespace: shop
+  labels:
+    # So you can find and remove every trace of this later:
+    #   kubectl -n shop delete ingress -l purpose=teaching-example
+    purpose: teaching-example
+spec:
+  # Which controller should act on this rule. Your stage-2 Terraform installs
+  # ingress-nginx and registers this class. Naming it explicitly is
+  # reproducible; relying on whichever class happens to be the default is not.
+  ingressClassName: nginx
+
+  # NOTE WHAT IS MISSING: there is no `tls:` block here, so this is served
+  # over plain HTTP on port 80. Adding TLS is Task 5, and it needs a Secret
+  # that something has to create. See the primer, Part 2.
+
+  rules:
+    # NOTE WHAT ELSE IS MISSING: no `host:` field. With no host, this rule
+    # matches ANY hostname, including a bare IP address -- which is why you
+    # can test it without DNS. Your real Ingress must match on a specific
+    # host, because hostname-based routing is what a certificate is issued
+    # against.
+    - http:
+        paths:
+          - path: /products
+            # Prefix: matches /products and everything under it.
+            # The alternatives are Exact and ImplementationSpecific.
+            #
+            # IMPORTANT: the path is forwarded to the backend UNCHANGED.
+            # A request for /products/3 arrives at the catalog service as
+            # /products/3, which is a route it serves -- which is why this
+            # example works without any rewriting. Had the path been
+            # /example-catalog, the service would have received
+            # /example-catalog/... and returned 404, because Flask has no
+            # such route. When the external path and the internal route must
+            # differ, you need the nginx rewrite-target annotation. Worth
+            # knowing it exists; not needed here.
+            pathType: Prefix
+            backend:
+              service:
+                # A Service name, in the SAME namespace as this Ingress.
+                # An Ingress cannot route to a Service in another namespace.
+                name: catalog
+                port:
+                  # By name, matching the port name in the catalog Service.
+                  # You can use `number: 5000` instead; the name survives a
+                  # port change, the number does not.
+                  name: http
+
+# ---------------------------------------------------------------------------
+# WATCH IT WORK
+#
+#   kubectl apply -f docs/examples/EXAMPLE-ingress.yaml
+#   kubectl -n shop get ingress
+#   kubectl -n shop describe ingress example-catalog-http
+#
+# The ADDRESS column takes a few seconds to populate. When it has:
+#
+#   curl -s http://<your-public-ip>/products | head
+#
+# You are reaching a ClusterIP Service, from outside the cluster, through the
+# ingress controller. No NodePort, no LoadBalancer.
+#
+# ---------------------------------------------------------------------------
+# THINGS WORTH BREAKING, BECAUSE THE ERROR IS THE LESSON
+#
+#   0. curl http://<your-public-ip>/healthz -- also catalog, also routed,
+#      because pathType: Prefix on /products does NOT match /healthz. This
+#      one returns 404 from nginx. Confirm you can tell an nginx 404 (no
+#      matching rule) from a Flask 404 (rule matched, no such route): they
+#      look different, and telling them apart is most of Ingress debugging.
+#
+#   1. Change the service name to one that does not exist and re-apply.
+#      `describe ingress` reports it; the request returns 503 from nginx.
+#      This is the failure you will hit if your own Ingress names the wrong
+#      backend, and knowing what it looks like saves you an hour later.
+#
+#   2. Change `name: http` to `number: 9999`. Same class of failure,
+#      different message.
+#
+#   3. Add `host: not-your-hostname.example.com` and re-apply. The curl above
+#      now returns 404 from nginx, because the Host header no longer matches
+#      any rule. That is hostname routing working correctly -- and it is the
+#      single most common reason a student's own Ingress "does nothing".
+#
+#   4. Delete it and curl again. Connection refused or 404: with no rule,
+#      the controller has nothing to route.
+#
+# ---------------------------------------------------------------------------
+# THEN DELETE IT
+#
+#   kubectl delete -f docs/examples/EXAMPLE-ingress.yaml
+#   kubectl -n shop get ingress        # confirm it is gone
+#
+# Write one or two sentences in your report about why it had to go. The
+# answer is not "because the assessment said so".
+# ---------------------------------------------------------------------------

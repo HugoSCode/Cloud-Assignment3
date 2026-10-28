@@ -1,0 +1,5 @@
+Flask==3.0.3
+gunicorn==22.0.0
+requests==2.32.3
+redis==5.0.7
+prometheus-flask-exporter==0.23.1
