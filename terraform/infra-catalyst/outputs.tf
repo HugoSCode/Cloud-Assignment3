@@ -16,23 +16,19 @@
 ###############################################################################
 
 output "public_ip" {
-  description = "The floating IP, surviving an instance stop/start."
-  value       = "TODO-public_ip"
+  value = openstack_networking_floatingip_v2.fip.address
 }
 
 output "shop_host" {
-  description = "Resolvable hostname. Feed this to scripts/render.sh and scripts/deploy.sh."
-  value       = "TODO-shop_host"
+  value = local.shop_host
 }
 
 output "ssh_command" {
-  description = "A ready-to-paste ssh command. Build it from var.admin_username and the address."
-  value       = "TODO-ssh_command"
+  value = "ssh -i k8s-key ${var.admin_username}@${openstack_networking_floatingip_v2.fip.address}"
 }
 
 output "admin_user" {
-  description = "Login account on the VM. The same value you pass to the cloud-init template."
-  value       = "TODO-admin_user"
+  value = var.admin_username
 }
 
 # --- Optional extras, not part of the contract -----------------------------
