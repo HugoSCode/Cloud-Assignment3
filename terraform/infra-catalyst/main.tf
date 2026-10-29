@@ -231,6 +231,7 @@ resource "openstack_networking_floatingip_v2" "fip" {
 resource "openstack_networking_floatingip_associate_v2" "fip_assoc" {
   floating_ip = openstack_networking_floatingip_v2.fip.address
   port_id     = openstack_networking_port_v2.port.id
+  depends_on  = [openstack_networking_router_interface_v2.router_if]
 }
 
 # --- Storage: boot volume plus the dedicated data volume ---
