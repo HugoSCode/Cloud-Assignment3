@@ -22,7 +22,7 @@ spec:
         runAsUser: 10001           # matches useradd --uid 10001 in the Dockerfile
       containers:
         - name: orders
-          image: localhost:32000/order-service:v1
+          image: localhost:32000/order-service:v2
           ports:
             - containerPort: 5000
               name: http

@@ -105,8 +105,9 @@ resource "helm_release" "ingress_nginx" {
       # namespace and binds 80/443 on the host directly.
       hostNetwork = true
       dnsPolicy   = "ClusterFirstWithHostNet" # keep cluster DNS working
-      kind        = "DaemonSet"               # see note below
+      kind        = "Deployment"               # see note below
       service     = { type = "ClusterIP" }
+      updateStrategy = { type = "Recreate" } 
 
       # Ingress objects without an explicit class still get served.
       ingressClassResource = { default = true }

@@ -14,7 +14,7 @@ set -uo pipefail
 CLOUD="${1:-}"
 todo=0
 done_=0
-
+ls
 red=''; green=''; dim=''; off=''
 if [ -t 1 ]; then red=$'\033[31m'; green=$'\033[32m'; dim=$'\033[2m'; off=$'\033[0m'; fi
 

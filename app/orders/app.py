@@ -57,6 +57,11 @@ ORDERS_REJECTED = Counter(
     ["reason"],
 )
 
+ORDER_VALUE = Counter(
+    "order_value_total",
+    "Sum of order totals written to the datastore.",
+)
+
 # Fail fast when Redis is unavailable. Without the explicit Retry, redis-py
 # retries with exponential backoff, so a dead Redis makes THIS service slow
 # rather than making it return an error -- and a caller with a 3s timeout
@@ -147,6 +152,7 @@ def create_order():
         return jsonify({"error": "order store unavailable"}), 503
 
     ORDERS_PLACED.inc()
+    ORDER_VALUE.inc(order["total"])
     return jsonify(order), 201
 
 
